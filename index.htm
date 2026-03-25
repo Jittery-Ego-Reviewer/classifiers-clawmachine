@@ -1,727 +1,438 @@
-<!DOCTYPE html>
-<html lang="zh-HK">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>夾夾機：量詞大冒險</title>
+import React, { useState, useEffect, useRef } from 'react';
+import { Check, X, Scissors, Award, Play, RotateCcw, Box, Gift, AlertCircle } from 'lucide-react';
+
+// --- 資料庫：治療刺激物 (Therapeutic Stimuli) ---
+const STIMULI = [
+  { name: '雞', emoji: '🐔', classifier: '隻' },
+  { name: '八爪魚', emoji: '🐙', classifier: '隻' },
+  { name: '蝦', emoji: '🦐', classifier: '隻' },
+  { name: '兔子', emoji: '🐰', classifier: '隻' },
+  { name: '狗', emoji: '🐶', classifier: '隻' },
+  { name: '蝸牛', emoji: '🐌', classifier: '隻' },
+  { name: '雀鳥', emoji: '🐦', classifier: '隻' },
+  { name: '蛇', emoji: '🐍', classifier: '條' },
+  { name: '蘑菇', emoji: '🍄', classifier: '個' },
+  { name: '蘋果', emoji: '🍎', classifier: '個' },
+  { name: '三文治', emoji: '🥪', classifier: '個' },
+  { name: '老師', emoji: '🧑‍🏫', classifier: '個' },
+  { name: '足球', emoji: '⚽', classifier: '個' },
+  { name: '籃球', emoji: '🏀', classifier: '個' },
+  { name: '雪糕', emoji: '🍦', classifier: '個' },
+  { name: '月餅', emoji: '🥮', classifier: '個' },
+  { name: '手錶', emoji: '⌚', classifier: '隻' },
+  { name: '時鐘', emoji: '🕰️', classifier: '個' },
+  { name: '水桶', emoji: '🪣', classifier: '個' },
+  { name: '鏡子', emoji: '🪞', classifier: '塊' },
+  { name: '鉛筆', emoji: '✏️', classifier: '枝' }
+];
+
+// --- 音效生成器 (無需外部檔案) ---
+const playSound = (type) => {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return;
+  const ctx = new AudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  if (type === 'slice') {
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(800, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1500, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } else if (type === 'pop') {
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(400, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  } else if (type === 'correct') {
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+    osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+    osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2); // G5
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+  } else if (type === 'incorrect') {
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(300, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.3);
+  } else if (type === 'empty') {
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(400, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.5);
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.5);
+  }
+};
+
+export default function App() {
+  const [screen, setScreen] = useState('START'); // START, GAME, END
+  const [round, setRound] = useState(1);
+  const [score, setScore] = useState(0);
+  const [boxState, setBoxState] = useState('CLOSED'); // CLOSED, OPENED
+  const [currentItem, setCurrentItem] = useState(null);
+  const [isEmpty, setIsEmpty] = useState(false);
+  
+  // Slicing interaction state
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+  const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
+  const boxRef = useRef(null);
+
+  const TOTAL_ROUNDS = 10;
+
+  const startGame = () => {
+    setScreen('GAME');
+    setRound(1);
+    setScore(0);
+    resetBox();
+  };
+
+  const resetBox = () => {
+    setBoxState('CLOSED');
+    setCurrentItem(null);
+    setIsEmpty(false);
+    setIsDrawing(false);
+  };
+
+  const handlePointerDown = (e) => {
+    if (boxState !== 'CLOSED') return;
+    setIsDrawing(true);
+    const rect = boxRef.current.getBoundingClientRect();
+    setStartPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setCurrentPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  const handlePointerMove = (e) => {
+    if (!isDrawing) return;
+    const rect = boxRef.current.getBoundingClientRect();
+    setCurrentPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  const handlePointerUp = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    const dx = currentPos.x - startPos.x;
     
-    <!-- React & ReactDOM -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    // Check if the horizontal swipe is long enough (simulate slicing)
+    if (Math.abs(dx) > 80) {
+      openBox();
+    }
+  };
+
+  const openBox = () => {
+    playSound('slice');
+    setTimeout(() => playSound('pop'), 150);
     
-    <!-- Babel for JSX -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    // 90% chance of success, 10% chance empty
+    const chance = Math.random();
+    if (chance < 0.1) {
+      setIsEmpty(true);
+      setTimeout(() => playSound('empty'), 300);
+    } else {
+      setIsEmpty(false);
+      const randomStimulus = STIMULI[Math.floor(Math.random() * STIMULI.length)];
+      const randomCount = Math.floor(Math.random() * 10) + 1; // 1 to 10
+      setCurrentItem({ ...randomStimulus, count: randomCount });
+    }
+    setBoxState('OPENED');
+  };
 
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Varela+Round&display=swap');
+  const handleFeedback = (isCorrect) => {
+    if (isCorrect) {
+      playSound('correct');
+      setScore(prev => prev + 1);
+    } else {
+      playSound('incorrect');
+    }
+    nextRound();
+  };
 
-        body {
-            font-family: 'Varela Round', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #fde68a;
-            touch-action: manipulation; /* Prevent zoom on double tap */
-        }
+  const nextRound = () => {
+    if (round >= TOTAL_ROUNDS) {
+      setTimeout(() => setScreen('END'), 500);
+    } else {
+      setRound(prev => prev + 1);
+      resetBox();
+    }
+  };
 
-        /* Carnival Theme Background */
-        .carnival-bg {
-            background: repeating-linear-gradient(
-                45deg,
-                #fca5a5,
-                #fca5a5 40px,
-                #fecaca 40px,
-                #fecaca 80px
-            );
-        }
+  // --- Screens ---
 
-        /* Animations */
-        .claw-transition {
-            transition: top 0.8s ease-in-out, left 0.8s ease-in-out;
-        }
+  if (screen === 'START') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-pink-100 to-purple-200 flex items-center justify-center p-4 font-sans text-gray-800">
+        <div className="bg-white/80 backdrop-blur-md rounded-3xl p-8 max-w-2xl w-full shadow-2xl text-center border-4 border-white">
+          <Gift className="w-24 h-24 mx-auto text-pink-500 mb-6 animate-bounce" />
+          <h1 className="text-4xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-purple-600 mb-4 tracking-wide">
+            神奇盲盒大挑戰
+          </h1>
+          <p className="text-xl md:text-2xl text-gray-700 mb-8 font-medium">
+            量詞訓練互動遊戲 (小一適用)
+          </p>
+          
+          <div className="bg-pink-50 rounded-2xl p-6 mb-8 text-left border-2 border-pink-200">
+            <h3 className="text-xl font-bold text-pink-700 mb-3 flex items-center gap-2">
+              <AlertCircle className="w-6 h-6" /> 遊戲玩法：
+            </h3>
+            <ul className="list-disc list-inside space-y-2 text-lg text-gray-700">
+              <li>在盲盒上<strong className="text-pink-600">橫向畫一條直線</strong>即可切開盲盒！</li>
+              <li>打開盲盒後，看看裡面有多少件物品。</li>
+              <li>請小朋友用完整的句子或短語說出物品及正確的量詞（例如：「三個蘋果」）。</li>
+              <li>治療師或家長請根據表現點擊下方 <span className="text-green-600 font-bold">✅</span> 或 <span className="text-red-500 font-bold">❌</span>。</li>
+              <li>注意：有10%機會抽中空盲盒喔！</li>
+            </ul>
+          </div>
 
-        .bounce {
-            animation: bounce 2s infinite;
-        }
-        @keyframes bounce {
-            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
-            40% { transform: translateY(-20px); }
-            60% { transform: translateY(-10px); }
-        }
+          <button 
+            onClick={startGame}
+            className="group relative inline-flex items-center justify-center px-8 py-4 text-2xl font-bold text-white transition-all duration-200 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full hover:from-pink-600 hover:to-purple-600 hover:scale-105 shadow-xl hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-purple-300"
+          >
+            <Play className="w-8 h-8 mr-2 group-hover:animate-pulse" />
+            開始遊戲
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-        .wiggle {
-            animation: wiggle 1.5s infinite;
-        }
-        @keyframes wiggle {
-            0%, 100% { transform: rotate(-5deg); }
-            50% { transform: rotate(5deg); }
-        }
+  if (screen === 'END') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-100 to-teal-100 flex items-center justify-center p-4 font-sans text-gray-800">
+        <div className="bg-white/90 backdrop-blur-md rounded-3xl p-10 max-w-md w-full shadow-2xl text-center border-4 border-white relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-50">
+            {/* Simple CSS Confetti representation */}
+            <div className="absolute top-10 left-10 w-3 h-3 bg-pink-400 rounded-full animate-ping"></div>
+            <div className="absolute top-20 right-20 w-4 h-4 bg-yellow-400 rounded-full animate-pulse"></div>
+            <div className="absolute bottom-10 left-1/4 w-3 h-3 bg-blue-400 rounded-full animate-bounce"></div>
+          </div>
+          
+          <Award className="w-32 h-32 mx-auto text-yellow-500 mb-6" />
+          <h1 className="text-5xl font-extrabold text-teal-600 mb-4">完成挑戰！</h1>
+          <p className="text-2xl text-gray-600 mb-8 font-medium">
+            你一共打開了 10 個盲盒
+          </p>
+          
+          <div className="bg-teal-50 rounded-2xl p-6 mb-8 border-2 border-teal-200">
+            <p className="text-lg text-teal-800 font-bold mb-2">正確運用量詞次數</p>
+            <p className="text-6xl font-black text-teal-500">
+              {score} <span className="text-3xl text-teal-300">/ {TOTAL_ROUNDS}</span>
+            </p>
+          </div>
 
-        .shake {
-            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
-        }
-        @keyframes shake {
-            10%, 90% { transform: translate3d(-1px, 0, 0); }
-            20%, 80% { transform: translate3d(2px, 0, 0); }
-            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-            40%, 60% { transform: translate3d(4px, 0, 0); }
-        }
+          <button 
+            onClick={startGame}
+            className="inline-flex items-center justify-center px-8 py-4 text-xl font-bold text-white transition-all duration-200 bg-teal-500 rounded-full hover:bg-teal-600 hover:scale-105 shadow-lg focus:outline-none focus:ring-4 focus:ring-teal-300"
+          >
+            <RotateCcw className="w-6 h-6 mr-2" />
+            再玩一次
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-        .pop-in {
-            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-        }
-        @keyframes popIn {
-            from { transform: scale(0.5); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
-        }
-
-        .confetti {
-            position: absolute;
-            width: 10px;
-            height: 10px;
-            background-color: #f00;
-            animation: fall linear forwards;
-        }
-        @keyframes fall {
-            to { transform: translateY(100vh) rotate(720deg); }
-        }
-
-        /* Machine styling */
-        .machine-glass {
-            background: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(219,234,254,0.8) 100%);
-            box-shadow: inset 0 0 20px rgba(0,0,0,0.1);
-            border: 12px solid #fbbf24; /* Gold border */
-            border-radius: 24px;
-        }
-
-        /* Buttons */
-        .game-btn {
-            transition: filter 0.1s;
-        }
-        .game-btn:active {
-            filter: brightness(0.9);
-        }
-
-        /* Carnival Lights */
-        .lights-border {
-            position: relative;
-        }
-        .lights-border::after {
-            content: '';
-            position: absolute;
-            top: 4px; left: 4px; right: 4px; bottom: 4px;
-            border: 6px dotted #fff;
-            animation: flash 1s infinite alternate;
-            pointer-events: none;
-            z-index: 50;
-        }
-        @keyframes flash {
-            0% { border-color: #fef08a; box-shadow: 0 0 10px #fef08a inset; }
-            100% { border-color: #f59e0b; box-shadow: 0 0 20px #f59e0b inset; }
-        }
+  // --- GAME SCREEN ---
+  return (
+    <div className="min-h-screen flex flex-col md:flex-row bg-gradient-to-br from-indigo-50 to-pink-50 font-sans selection:bg-transparent">
+      
+      {/* Main Play Area */}
+      <div className="flex-1 flex flex-col items-center justify-center p-4 relative">
         
-        .hide-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-    </style>
-</head>
-<body class="carnival-bg min-h-screen w-full flex items-center justify-center">
+        {/* Top Info (Mobile mostly) */}
+        <div className="absolute top-4 left-4 bg-white/70 px-4 py-2 rounded-full shadow-sm md:hidden flex items-center gap-2 font-bold text-indigo-700">
+          回合: {round}/{TOTAL_ROUNDS}
+        </div>
 
-    <div id="root" class="w-full min-h-screen bg-white shadow-2xl flex flex-col relative lights-border"></div>
+        {/* Box Container */}
+        <div className="relative mb-12 flex flex-col items-center">
+          
+          {boxState === 'CLOSED' && (
+            <div className="text-center mb-6 animate-pulse">
+              <p className="text-2xl font-bold text-pink-600 bg-pink-100 px-6 py-2 rounded-full inline-flex items-center gap-2 border-2 border-pink-200">
+                <Scissors className="w-6 h-6" /> 在盒子上劃一刀打開！
+              </p>
+            </div>
+          )}
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef, useCallback } = React;
+          <div 
+            ref={boxRef}
+            className={`relative w-72 h-72 md:w-96 md:h-96 rounded-3xl transition-all duration-500 select-none touch-none ${
+              boxState === 'CLOSED' 
+                ? 'bg-gradient-to-b from-yellow-200 to-yellow-400 shadow-[0_20px_50px_rgba(251,191,36,0.5)] cursor-crosshair hover:scale-105 border-8 border-yellow-100' 
+                : 'bg-white shadow-xl border-4 border-gray-100'
+            }`}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerUp}
+          >
+            {/* Box Closed State & Slicing Line UI */}
+            {boxState === 'CLOSED' && (
+              <>
+                {/* Cute decorations for the box */}
+                <span className="absolute pointer-events-none top-6 left-6 text-3xl -rotate-12 opacity-80 drop-shadow-sm">🦄</span>
+                <span className="absolute pointer-events-none top-4 right-8 text-4xl rotate-12 opacity-80 drop-shadow-sm">🍭</span>
+                <span className="absolute pointer-events-none bottom-8 left-8 text-4xl -rotate-6 opacity-80 drop-shadow-sm">🧸</span>
+                <span className="absolute pointer-events-none bottom-6 right-6 text-4xl rotate-12 opacity-80 drop-shadow-sm">🎈</span>
+                <span className="absolute pointer-events-none top-[45%] left-4 text-2xl rotate-45 opacity-60">✨</span>
+                <span className="absolute pointer-events-none bottom-[35%] right-4 text-2xl -rotate-12 opacity-60">🌟</span>
+                <span className="absolute pointer-events-none bottom-4 left-[45%] text-3xl opacity-70">🎀</span>
 
-        // --- Data ---
-        const STIMULI = [
-            { name: '雞', emoji: '🐔', classifier: '隻' },
-            { name: '八爪魚', emoji: '🐙', classifier: '隻' },
-            { name: '蝦', emoji: '🦐', classifier: '隻' },
-            { name: '兔仔', emoji: '🐰', classifier: '隻' },
-            { name: '狗', emoji: '🐶', classifier: '隻' },
-            { name: '蝸牛', emoji: '🐌', classifier: '隻' },
-            { name: '雀仔', emoji: '🐦', classifier: '隻' },
-            { name: '蛇', emoji: '🐍', classifier: '條' },
-            { name: '蘑菇', emoji: '🍄', classifier: '個' },
-            { name: '蘋果', emoji: '🍎', classifier: '個' },
-            { name: '三文治', emoji: '🥪', classifier: '個' },
-            { name: '老師', emoji: '👩‍🏫', classifier: '個' },
-            { name: '足球', emoji: '⚽', classifier: '個' },
-            { name: '籃球', emoji: '🏀', classifier: '個' },
-            { name: '雪糕', emoji: '🍦', classifier: '個' },
-            { name: '月餅', emoji: '🥮', classifier: '個' },
-            { name: '手錶', emoji: '⌚', classifier: '隻' },
-            { name: '閙鐘', emoji: '⏰', classifier: '個' },
-            { name: '膠桶', emoji: '🪣', classifier: '個' },
-            { name: '鏡', emoji: '🪞', classifier: '塊' },
-            { name: '鉛筆', emoji: '✏️', classifier: '枝' }
-        ];
-
-        const PRESENT_COLORS = ['🎁', '📦', '🛍️'];
-
-        // --- Audio Context Setup ---
-        let audioCtx = null;
-        const initAudio = () => {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-        };
-
-        const playSound = (type) => {
-            if (!audioCtx) return;
-            const now = audioCtx.currentTime;
-            const osc = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            
-            osc.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-
-            switch (type) {
-                case 'success':
-                    // Happy chime
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(523.25, now); // C5
-                    osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
-                    osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
-                    gainNode.gain.setValueAtTime(0.3, now);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
-                    osc.start(now);
-                    osc.stop(now + 0.4);
-                    break;
-                case 'fail':
-                    // Low boop
-                    osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(200, now);
-                    osc.frequency.exponentialRampToValueAtTime(100, now + 0.3);
-                    gainNode.gain.setValueAtTime(0.3, now);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-                    osc.start(now);
-                    osc.stop(now + 0.3);
-                    break;
-                case 'grab':
-                    // Mechanical whir
-                    osc.type = 'square';
-                    osc.frequency.setValueAtTime(100, now);
-                    gainNode.gain.setValueAtTime(0.1, now);
-                    gainNode.gain.linearRampToValueAtTime(0.01, now + 0.5);
-                    osc.start(now);
-                    osc.stop(now + 0.5);
-                    break;
-                case 'drop':
-                    // Whistle down
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(800, now);
-                    osc.frequency.exponentialRampToValueAtTime(200, now + 0.3);
-                    gainNode.gain.setValueAtTime(0.2, now);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-                    osc.start(now);
-                    osc.stop(now + 0.3);
-                    break;
-                case 'open':
-                    // Magical pop
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(400, now);
-                    osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
-                    gainNode.gain.setValueAtTime(0.3, now);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
-                    osc.start(now);
-                    osc.stop(now + 0.2);
-                    break;
-                case 'click':
-                    // Short button click
-                    osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(600, now);
-                    osc.frequency.exponentialRampToValueAtTime(300, now + 0.1);
-                    gainNode.gain.setValueAtTime(0.2, now);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-                    osc.start(now);
-                    osc.stop(now + 0.1);
-                    break;
-            }
-        };
-
-        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-        // --- Main App Component ---
-        const App = () => {
-            const [gameState, setGameState] = useState('START'); // START, PLAYING, END
-            const [round, setRound] = useState(1);
-            const MAX_ROUNDS = 10;
-            const [collection, setCollection] = useState([]);
-            
-            // Machine State
-            const [clawPos, setClawPos] = useState({ x: 50, y: 15 });
-            const [clawState, setClawState] = useState('IDLE'); // IDLE, DROPPING, GRABBING, RETURNING, MOVING_TO_CHUTE, DROPPING_PRESENT
-            const [hasPresent, setHasPresent] = useState(false);
-            const [presentFalling, setPresentFalling] = useState(false);
-            const [feedbackMsg, setFeedbackMsg] = useState('');
-            
-            // Modal State
-            const [modalOpen, setModalOpen] = useState(false);
-            const [modalStep, setModalStep] = useState('CLOSED'); // CLOSED, PRESENT, OPENED
-            const [currentTask, setCurrentTask] = useState(null);
-            const [showHint, setShowHint] = useState(false);
-
-            // Setup static presents at the bottom
-            const [pile, setPile] = useState([]);
-            useEffect(() => {
-                const newPile = Array.from({ length: 80 }).map((_, i) => ({
-                    id: i,
-                    emoji: PRESENT_COLORS[Math.floor(Math.random() * PRESENT_COLORS.length)],
-                    left: 25 + Math.random() * 70, // 25% to 95%
-                    bottom: Math.random() * 30 - 8, // -8% to 22%
-                    rotation: Math.random() * 60 - 30,
-                    size: 2.5 + Math.random() * 2
-                }));
-                setPile(newPile);
-            }, []);
-
-            const startGame = () => {
-                initAudio();
-                playSound('click');
-                setGameState('PLAYING');
-                setRound(1);
-                setCollection([]);
-                setClawPos({ x: 50, y: 15 });
-            };
-
-            const moveClaw = (dx, dy) => {
-                if (clawState !== 'IDLE') return;
-                playSound('click');
-                setClawPos(prev => {
-                    let newX = prev.x + dx;
-                    let newY = prev.y + dy;
-                    // Boundaries
-                    if (newX < 35) newX = 35; // Don't allow hovering directly over chute to start
-                    if (newX > 90) newX = 90;
-                    if (newY < 5) newY = 5;
-                    if (newY > 30) newY = 30; // Max resting height
-                    return { x: newX, y: newY };
-                });
-            };
-
-            const executeGrab = async () => {
-                if (clawState !== 'IDLE') return;
-                setClawState('DROPPING');
-                playSound('grab');
-                setFeedbackMsg('');
-                
-                // 1. Drop down
-                setClawPos(prev => ({ ...prev, y: 80 }));
-                await sleep(800);
-
-                // 2. Determine success (90% success rate as per requirements)
-                const isSuccess = Math.random() < 0.90;
-
-                if (isSuccess) {
-                    setClawState('GRABBING');
-                    setHasPresent(true);
-                    playSound('success');
-                    await sleep(400);
-
-                    // 3. Return up
-                    setClawState('RETURNING');
-                    setClawPos(prev => ({ ...prev, y: 15 }));
-                    await sleep(800);
-
-                    // 4. Move to chute (left side)
-                    setClawState('MOVING_TO_CHUTE');
-                    setClawPos(prev => ({ ...prev, x: 15 }));
-                    await sleep(800);
-
-                    // 5. Drop present
-                    setClawState('DROPPING_PRESENT');
-                    setHasPresent(false);
-                    setPresentFalling(true);
-                    playSound('drop');
-                    await sleep(600);
-                    
-                    setPresentFalling(false);
-                    setClawState('IDLE');
-                    
-                    // 6. Generate random stimulus and open modal
-                    const randomStimulus = STIMULI[Math.floor(Math.random() * STIMULI.length)];
-                    const randomCount = Math.floor(Math.random() * 10) + 1;
-                    setCurrentTask({ item: randomStimulus, count: randomCount });
-                    setModalStep('PRESENT');
-                    setModalOpen(true);
-
-                } else {
-                    // Missed!
-                    playSound('fail');
-                    setFeedbackMsg('哎呀！差一點點！(再試一次)');
-                    await sleep(500);
-                    
-                    // Return empty
-                    setClawState('RETURNING');
-                    setClawPos(prev => ({ ...prev, y: 15 }));
-                    await sleep(800);
-                    setClawState('IDLE');
-                    setFeedbackMsg('');
-                }
-            };
-
-            const handleOpenPresent = () => {
-                playSound('open');
-                setModalStep('OPENED');
-                setShowHint(false); // Reset hint state for the new present
-            };
-
-            const handleEvaluation = (isCorrect) => {
-                if (isCorrect) {
-                    playSound('success');
-                    setCollection(prev => [...prev, currentTask]);
-                } else {
-                    playSound('fail');
-                }
-                
-                // Proceed to next round or end game
-                setModalOpen(false);
-                setModalStep('CLOSED');
-                
-                if (round >= MAX_ROUNDS) {
-                    setTimeout(() => setGameState('END'), 500);
-                } else {
-                    setRound(r => r + 1);
-                    // Reset claw position roughly to center
-                    setClawPos({ x: 50, y: 15 });
-                }
-            };
-
-            // --- Sub-components ---
-
-            const StartScreen = () => (
-                <div className="absolute inset-0 bg-blue-50 z-50 flex flex-col items-center justify-center p-8 text-center animate-fade-in">
-                    <h1 className="text-6xl font-bold text-red-500 mb-6 drop-shadow-md wiggle tracking-wider">
-                        🎪 夾夾機 🎪<br/>
-                        <span className="text-4xl text-blue-600">量詞大冒險</span>
-                    </h1>
-                    
-                    <div className="bg-white p-8 rounded-3xl shadow-xl max-w-2xl border-4 border-yellow-400 text-left space-y-4 mb-8">
-                        <h2 className="text-2xl font-bold text-gray-800 border-b-2 border-gray-200 pb-2">遊戲玩法：</h2>
-                        <ul className="text-xl text-gray-700 space-y-3 leading-relaxed">
-                            <li className="flex items-center"><span className="text-3xl mr-3">🕹️</span> 使用方向鍵移動夾子。</li>
-                            <li className="flex items-center"><span className="text-3xl mr-3">👇</span> 按下「Grab」按鈕把禮物抓起來。</li>
-                            <li className="flex items-center"><span className="text-3xl mr-3">🎁</span> 成功夾到後，點擊打開神秘禮物！</li>
-                            <li className="flex items-center"><span className="text-3xl mr-3">🗣️</span> <strong>小朋友：</strong>請大聲說出裡面物品的數量和量詞<br/><span className="text-gray-500 text-base ml-12">（例如：「三個蘋果」、「兩隻狗」）。</span></li>
-                            <li className="flex items-center"><span className="text-3xl mr-3">👨‍🏫</span> <strong>家長/治療師：</strong>根據小朋友的表現，按下 ✅ 或 ❌。</li>
-                        </ul>
-                    </div>
-
-                    <button 
-                        onClick={startGame}
-                        className="game-btn bg-green-500 hover:bg-green-600 text-white text-4xl font-bold py-6 px-16 rounded-full shadow-[0_8px_0_rgb(21,128,61)] transition-all"
-                    >
-                        開始遊戲 ▶️
-                    </button>
+                <div className="absolute top-1/4 left-4 right-4 border-t-4 border-dashed border-yellow-600/50"></div>
+                <div className="absolute top-[20%] left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/40 rounded-full p-2 backdrop-blur-sm shadow-inner">
+                  <span className="text-5xl filter drop-shadow-lg">🎁</span>
                 </div>
-            );
-
-            const EndScreen = () => {
-                // Generate confetti
-                const confetti = Array.from({ length: 50 }).map((_, i) => (
-                    <div key={i} className="confetti" style={{
-                        left: `${Math.random() * 100}%`,
-                        backgroundColor: ['#f00', '#0f0', '#00f', '#ff0', '#f0f'][Math.floor(Math.random() * 5)],
-                        animationDuration: `${Math.random() * 2 + 1}s`,
-                        animationDelay: `${Math.random() * 2}s`
-                    }}></div>
-                ));
-
-                return (
-                    <div className="absolute inset-0 bg-yellow-50 z-50 flex flex-col items-center justify-center p-8 text-center overflow-hidden">
-                        {confetti}
-                        <h1 className="text-6xl font-bold text-red-500 mb-6 drop-shadow-md bounce z-10">
-                            🎉 遊戲完成！ 🎉
-                        </h1>
-                        <div className="bg-white p-10 rounded-3xl shadow-2xl border-8 border-green-400 z-10 flex flex-col items-center">
-                            <h2 className="text-4xl font-bold text-gray-800 mb-4">你的成績：</h2>
-                            <div className="text-7xl font-extrabold text-blue-600 mb-8">
-                                {collection.length} / {MAX_ROUNDS}
-                            </div>
-                            
-                            <div className="flex flex-wrap justify-center gap-2 max-w-lg mb-8">
-                                {collection.map((c, i) => (
-                                    <div key={i} className="bg-gray-100 px-3 py-2 rounded-lg text-2xl shadow-sm border border-gray-200 pop-in" style={{animationDelay: `${i * 0.1}s`}}>
-                                        {c.item.emoji} {c.count}{c.item.classifier}
-                                    </div>
-                                ))}
-                            </div>
-
-                            <button 
-                                onClick={startGame}
-                                className="game-btn bg-blue-500 hover:bg-blue-600 text-white text-3xl font-bold py-4 px-10 rounded-full shadow-[0_6px_0_rgb(29,78,216)] transition-all"
-                            >
-                                再玩一次 🔄
-                            </button>
-                        </div>
-                    </div>
-                );
-            };
-
-            const Modal = () => {
-                if (!modalOpen) return null;
-
-                return (
-                    <div className="absolute inset-0 bg-black/60 z-40 flex items-center justify-center p-4 backdrop-blur-sm">
-                        <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-3xl overflow-hidden pop-in border-8 border-yellow-400 relative">
-                            
-                            {modalStep === 'PRESENT' && (
-                                <div className="p-16 flex flex-col items-center justify-center cursor-pointer" onClick={handleOpenPresent}>
-                                    <h2 className="text-4xl font-bold text-blue-600 mb-10">成功夾到了！</h2>
-                                    <div className="text-9xl bounce drop-shadow-2xl hover:scale-110 transition-transform">
-                                        🎁
-                                    </div>
-                                    <p className="mt-10 text-3xl font-bold text-gray-600 animate-pulse bg-yellow-200 px-8 py-4 rounded-full">
-                                        👉 點擊打開禮物！ 👈
-                                    </p>
-                                </div>
-                            )}
-
-                            {modalStep === 'OPENED' && currentTask && (
-                                <div className="p-10 flex flex-col items-center">
-                                    <h2 className="text-3xl font-bold text-gray-700 mb-2">哇！裡面有...</h2>
-                                    
-                                    {/* Item Display Grid */}
-                                    <div className="bg-blue-50 w-full rounded-3xl p-8 mb-8 flex flex-wrap justify-center items-center gap-4 min-h-[250px] border-4 border-blue-200">
-                                        {Array.from({ length: currentTask.count }).map((_, i) => (
-                                            <div key={i} className="text-7xl pop-in drop-shadow-md" style={{animationDelay: `${i * 0.05}s`}}>
-                                                {currentTask.item.emoji}
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    <div className="text-2xl text-gray-600 mb-8 font-bold bg-gray-100 px-8 py-4 rounded-3xl flex flex-col items-center">
-                                        <div>
-                                            請大聲說：<span className="text-red-500 text-3xl mx-2">{currentTask.count}</span> <span className="text-blue-600 text-3xl">___</span> <span className="text-green-600 text-3xl">{currentTask.item.name}</span>
-                                        </div>
-                                        
-                                        <div className="mt-3 h-8 flex items-center justify-center">
-                                            {!showHint ? (
-                                                <button 
-                                                    onClick={() => setShowHint(true)}
-                                                    className="text-base bg-yellow-200 hover:bg-yellow-300 text-yellow-800 px-5 py-1.5 rounded-full font-bold shadow-sm transition-colors flex items-center gap-2 pop-in"
-                                                >
-                                                    💡 顯示提示
-                                                </button>
-                                            ) : (
-                                                <div className="text-base font-normal text-gray-600 bg-white border-2 border-dashed border-gray-300 px-5 py-1.5 rounded-full pop-in">
-                                                    (提示：<span className="font-bold text-blue-600">{currentTask.item.classifier}</span>)
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Evaluation Buttons */}
-                                    <div className="w-full border-t-4 border-dashed border-gray-200 pt-6">
-                                        <p className="text-center text-gray-500 mb-4 font-bold text-xl">家長/治療師評分區：</p>
-                                        <div className="flex justify-center gap-8">
-                                            <button 
-                                                onClick={() => handleEvaluation(true)}
-                                                className="game-btn bg-green-500 hover:bg-green-600 text-white w-40 h-24 rounded-2xl flex flex-col items-center justify-center shadow-[0_8px_0_rgb(21,128,61)]"
-                                            >
-                                                <span className="text-5xl">✅</span>
-                                                <span className="text-xl font-bold mt-1">正確</span>
-                                            </button>
-                                            <button 
-                                                onClick={() => handleEvaluation(false)}
-                                                className="game-btn bg-red-500 hover:bg-red-600 text-white w-40 h-24 rounded-2xl flex flex-col items-center justify-center shadow-[0_8px_0_rgb(185,28,28)]"
-                                            >
-                                                <span className="text-5xl">❌</span>
-                                                <span className="text-xl font-bold mt-1">需努力</span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                );
-            };
-
-            return (
-                <div className="w-full h-full flex flex-col bg-gray-100 relative">
-                    {/* Screens */}
-                    {gameState === 'START' && <StartScreen />}
-                    {gameState === 'END' && <EndScreen />}
-                    
-                    {/* Header */}
-                    <div className="h-16 bg-red-500 flex items-center justify-between px-6 shadow-md z-10 border-b-4 border-red-700">
-                        <div className="text-white font-bold text-2xl tracking-widest text-shadow">🎪 夾夾機</div>
-                        <div className="flex gap-4">
-                            <div className="bg-white/20 px-4 py-1 rounded-full text-white font-bold text-xl border-2 border-white/30">
-                                回合: {round} / {MAX_ROUNDS}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Main Game Area */}
-                    <div className="flex-1 flex flex-col md:flex-row overflow-y-auto p-4 gap-4 bg-gradient-to-b from-blue-900 to-purple-900 pb-12">
-                        
-                        {/* Left: Claw Machine */}
-                        <div className="flex-1 flex flex-col bg-white rounded-3xl p-4 shadow-inner border-8 border-gray-300 relative min-h-[500px]">
-                            
-                            {/* The Machine Window */}
-                            <div className="flex-1 machine-glass relative overflow-hidden rounded-2xl mb-4 border-b-8 border-gray-400 min-h-[300px]">
-                                
-                                {/* Background Details */}
-                                <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, #000 2px, transparent 2px)', backgroundSize: '20px 20px' }}></div>
-                                <div className="absolute top-0 w-full h-8 bg-gray-800 shadow-md"></div> {/* Top rail housing */}
-                                
-                                {/* The Chute (Hole) */}
-                                <div className="absolute left-0 bottom-0 w-[25%] h-[40%] bg-gradient-to-r from-gray-800 to-gray-700 border-r-8 border-t-8 border-gray-600 rounded-tr-3xl flex items-center justify-center overflow-hidden z-10 shadow-[10px_-10px_20px_rgba(0,0,0,0.3)]">
-                                    <div className="w-3/4 h-3/4 bg-black rounded-xl border-4 border-gray-900 shadow-inner opacity-80"></div>
-                                    <div className="absolute bottom-4 text-gray-400 font-bold text-xl">出口 出口</div>
-                                </div>
-
-                                {/* The Presents Pile */}
-                                {pile.map(p => (
-                                    <div key={p.id} className="absolute drop-shadow-lg" style={{
-                                        left: `${p.left}%`,
-                                        bottom: `${p.bottom}%`,
-                                        transform: `rotate(${p.rotation}deg)`,
-                                        fontSize: `${p.size}rem`,
-                                        zIndex: 5
-                                    }}>
-                                        {p.emoji}
-                                    </div>
-                                ))}
-
-                                {/* Dropping Present Animation */}
-                                {presentFalling && (
-                                    <div className="absolute text-6xl z-20" style={{
-                                        left: '12%',
-                                        top: '40%',
-                                        animation: 'fall down 0.6s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards'
-                                    }}>
-                                        🎁
-                                    </div>
-                                )}
-
-                                {/* Feedback Toast */}
-                                {feedbackMsg && (
-                                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/70 text-white px-6 py-3 rounded-full text-2xl font-bold z-30 pop-in whitespace-nowrap">
-                                        {feedbackMsg}
-                                    </div>
-                                )}
-
-                                {/* The Claw */}
-                                <div 
-                                    className="absolute claw-transition z-20 flex flex-col items-center"
-                                    style={{ 
-                                        left: `${clawPos.x}%`, 
-                                        top: `${clawPos.y}%`,
-                                        transform: 'translateX(-50%)'
-                                    }}
-                                >
-                                    {/* Top Rail Connector */}
-                                    <div className="w-10 h-6 bg-gray-700 rounded-md border-b-4 border-gray-900 absolute -top-10"></div>
-                                    
-                                    {/* String */}
-                                    <div className="w-2 bg-gray-300 absolute -top-[500px] shadow-sm" style={{ height: '500px' }}></div>
-                                    
-                                    {/* Claw Head */}
-                                    <div className="relative mt-2">
-                                        {/* Main Hub */}
-                                        <div className="w-16 h-12 bg-yellow-400 rounded-t-xl border-4 border-yellow-600 shadow-md relative z-10">
-                                            <div className="w-4 h-4 bg-red-500 rounded-full absolute top-2 left-1/2 -translate-x-1/2 shadow-inner"></div>
-                                        </div>
-                                        
-                                        {/* Prongs */}
-                                        <div className="flex justify-between w-24 absolute -left-4 top-8 pointer-events-none">
-                                            <div className="w-6 h-16 border-l-8 border-b-8 border-gray-400 rounded-bl-3xl" style={{ transform: `rotate(${clawState === 'GRABBING' || clawState === 'RETURNING' || clawState === 'MOVING_TO_CHUTE' ? '-20deg' : '0deg'})`, transformOrigin: 'top right', transition: 'transform 0.3s' }}></div>
-                                            <div className="w-6 h-16 border-r-8 border-b-8 border-gray-400 rounded-br-3xl" style={{ transform: `rotate(${clawState === 'GRABBING' || clawState === 'RETURNING' || clawState === 'MOVING_TO_CHUTE' ? '20deg' : '0deg'})`, transformOrigin: 'top left', transition: 'transform 0.3s' }}></div>
-                                        </div>
-
-                                        {/* Held Present */}
-                                        {hasPresent && (
-                                            <div className="absolute top-12 left-1/2 -translate-x-1/2 text-5xl z-0 pop-in">
-                                                🎁
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Controls Panel */}
-                            <div className="h-48 bg-gray-200 rounded-2xl flex items-center justify-around md:justify-between px-2 md:px-8 border-t-4 border-gray-300 shadow-inner">
-                                
-                                {/* D-PAD */}
-                                <div className="relative w-32 h-32 md:w-40 md:h-40 bg-gray-300 rounded-full border-8 border-gray-400 shadow-inner shrink-0">
-                                    <button onClick={() => moveClaw(0, -10)} className="absolute top-0 md:top-1 left-1/2 -translate-x-1/2 w-10 md:w-12 h-12 md:h-14 bg-gray-800 rounded-t-lg active:bg-gray-600 flex items-center justify-center text-white text-xl md:text-2xl game-btn shadow-md">▲</button>
-                                    <button onClick={() => moveClaw(0, 10)} className="absolute bottom-0 md:bottom-1 left-1/2 -translate-x-1/2 w-10 md:w-12 h-12 md:h-14 bg-gray-800 rounded-b-lg active:bg-gray-600 flex items-center justify-center text-white text-xl md:text-2xl game-btn shadow-md">▼</button>
-                                    <button onClick={() => moveClaw(-10, 0)} className="absolute left-0 md:left-1 top-1/2 -translate-y-1/2 w-12 md:w-14 h-10 md:h-12 bg-gray-800 rounded-l-lg active:bg-gray-600 flex items-center justify-center text-white text-xl md:text-2xl game-btn shadow-md">◀</button>
-                                    <button onClick={() => moveClaw(10, 0)} className="absolute right-0 md:right-1 top-1/2 -translate-y-1/2 w-12 md:w-14 h-10 md:h-12 bg-gray-800 rounded-r-lg active:bg-gray-600 flex items-center justify-center text-white text-xl md:text-2xl game-btn shadow-md">▶</button>
-                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 md:w-12 h-10 md:h-12 bg-gray-900 rounded-full shadow-inner"></div>
-                                </div>
-
-                                {/* Grab Button */}
-                                <button 
-                                    onClick={executeGrab}
-                                    disabled={clawState !== 'IDLE'}
-                                    className={`w-28 h-28 md:w-32 md:h-32 rounded-full border-8 flex flex-col items-center justify-center game-btn shrink-0 ${clawState === 'IDLE' ? 'bg-red-500 border-red-700 shadow-[0_8px_0_rgb(153,27,27)] hover:bg-red-400 cursor-pointer' : 'bg-gray-400 border-gray-600 shadow-[0_8px_0_rgb(75,85,99)] cursor-not-allowed'}`}
-                                >
-                                    <span className="text-white text-2xl md:text-3xl font-black tracking-wider mb-1">下抓</span>
-                                    <span className="text-white/80 text-xs md:text-sm font-bold">GRAB</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Right: Collection Bar */}
-                        <div className="w-full md:w-80 shrink-0 bg-white rounded-3xl p-6 shadow-inner border-8 border-yellow-400 flex flex-col relative overflow-hidden min-h-[400px]">
-                            <div className="absolute top-0 left-0 w-full h-4 bg-yellow-400"></div>
-                            <h3 className="text-3xl font-bold text-center text-yellow-600 mb-4 border-b-4 border-yellow-100 pb-4">
-                                🏆 收集箱
-                            </h3>
-                            
-                            <div className="flex-1 overflow-y-auto hide-scrollbar flex flex-col gap-3">
-                                {collection.length === 0 ? (
-                                    <div className="flex-1 flex items-center justify-center text-gray-400 text-xl font-bold text-center p-4">
-                                        還沒有收集到物品喔！<br/>快去夾禮物吧！
-                                    </div>
-                                ) : (
-                                    collection.map((item, index) => (
-                                        <div key={index} className="bg-blue-50 p-4 rounded-xl border-2 border-blue-200 flex items-center justify-between shadow-sm pop-in">
-                                            <div className="text-4xl bg-white p-2 rounded-lg shadow-sm border border-gray-100">
-                                                {item.item.emoji}
-                                            </div>
-                                            <div className="text-2xl font-bold text-gray-700 text-right">
-                                                <span className="text-red-500 mr-1">{item.count}</span>
-                                                <span className="text-blue-600">{item.item.classifier}</span>
-                                                <span className="text-gray-800 ml-1">{item.item.name}</span>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                            
-                            {/* Progress Indicator */}
-                            <div className="mt-4 pt-4 border-t-4 border-gray-100 text-center">
-                                <div className="text-gray-500 font-bold mb-2 text-lg">進度</div>
-                                <div className="w-full bg-gray-200 rounded-full h-6 overflow-hidden border-2 border-gray-300 relative">
-                                    <div 
-                                        className="bg-green-500 h-full transition-all duration-500 ease-out flex items-center justify-end pr-2"
-                                        style={{ width: `${(round - 1) / MAX_ROUNDS * 100}%` }}
-                                    ></div>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    {/* Modal Overlay */}
-                    <Modal />
+                
+                {/* 加入「盲盒」文字 */}
+                <div className="absolute top-[60%] left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                  <h2 className="text-6xl md:text-7xl font-black text-white drop-shadow-[0_5px_5px_rgba(217,119,6,0.4)] tracking-[0.2em] select-none">盲盒</h2>
                 </div>
-            );
-        };
+                
+                {/* Render the cutting line when drawing */}
+                {isDrawing && (
+                  <svg className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                    <line 
+                      x1={startPos.x} 
+                      y1={startPos.y} 
+                      x2={currentPos.x} 
+                      y2={currentPos.y} 
+                      stroke="white" 
+                      strokeWidth="6" 
+                      strokeLinecap="round"
+                      className="drop-shadow-lg"
+                    />
+                  </svg>
+                )}
+              </>
+            )}
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+            {/* Box Opened State */}
+            {boxState === 'OPENED' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center animate-in zoom-in duration-300">
+                {isEmpty ? (
+                  <>
+                    <Box className="w-24 h-24 text-gray-300 mb-4" />
+                    <h2 className="text-3xl font-bold text-gray-500">哎呀！</h2>
+                    <p className="text-xl text-gray-400 mt-2">這是一個空盲盒！</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-7xl md:text-8xl mb-4 filter drop-shadow-xl animate-bounce">
+                      {currentItem.emoji}
+                    </div>
+                    <div className="bg-pink-100 text-pink-800 text-4xl md:text-5xl font-black px-6 py-3 rounded-2xl border-4 border-pink-200 shadow-sm">
+                      <span className="text-2xl mr-2 text-pink-500">x</span>{currentItem.count}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Therapist Controls (Only show when box is open) */}
+        <div className={`transition-opacity duration-300 w-full max-w-xl ${boxState === 'OPENED' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+          
+          {!isEmpty ? (
+            <div className="bg-white/80 backdrop-blur rounded-3xl p-6 shadow-lg border-2 border-indigo-50">
+              <div className="text-center mb-6">
+                <span className="inline-block bg-indigo-100 text-indigo-800 px-4 py-1 rounded-full text-sm font-bold mb-2 uppercase tracking-widest">
+                  治療師 / 家長專用
+                </span>
+                <p className="text-xl text-gray-700 font-medium">
+                  目標物品：<strong className="text-indigo-600 text-2xl mx-1">{currentItem?.name}</strong>
+                  <br className="md:hidden" />
+                  (目標量詞：<strong className="text-pink-600 text-2xl mx-1">{currentItem?.classifier}</strong>)
+                </p>
+              </div>
+              
+              <div className="flex gap-4 justify-center">
+                <button 
+                  onClick={() => handleFeedback(true)}
+                  className="flex-1 max-w-[200px] flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white p-4 md:p-6 rounded-2xl text-2xl font-bold shadow-green-500/30 shadow-lg hover:scale-105 transition-all active:scale-95"
+                >
+                  <Check className="w-8 h-8 stroke-[3]" /> 正確
+                </button>
+                <button 
+                  onClick={() => handleFeedback(false)}
+                  className="flex-1 max-w-[200px] flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white p-4 md:p-6 rounded-2xl text-2xl font-bold shadow-red-500/30 shadow-lg hover:scale-105 transition-all active:scale-95"
+                >
+                  <X className="w-8 h-8 stroke-[3]" /> 錯誤
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-center">
+              <button 
+                onClick={nextRound}
+                className="bg-gray-800 hover:bg-gray-900 text-white px-10 py-5 rounded-full text-2xl font-bold shadow-xl hover:scale-105 transition-all active:scale-95"
+              >
+                下一回合
+              </button>
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* Sidebar / Progress Tracking */}
+      <div className="w-full md:w-80 bg-white/60 backdrop-blur-xl border-l-2 border-white/50 p-6 flex flex-col md:shadow-[-10px_0_30px_rgba(0,0,0,0.03)] z-10">
+        <h3 className="text-2xl font-extrabold text-indigo-900 mb-8 hidden md:block">遊戲進度</h3>
+        
+        <div className="flex-1 flex flex-row md:flex-col gap-6 md:gap-8 justify-around md:justify-start">
+          
+          {/* Round Indicator */}
+          <div className="bg-indigo-50 rounded-2xl p-4 md:p-6 text-center border-2 border-indigo-100 flex-1 md:flex-none">
+            <p className="text-indigo-500 font-bold mb-1 text-sm md:text-base">當前回合</p>
+            <p className="text-3xl md:text-5xl font-black text-indigo-700">
+              {round} <span className="text-xl md:text-2xl text-indigo-300">/ {TOTAL_ROUNDS}</span>
+            </p>
+          </div>
+
+          {/* Score Indicator */}
+          <div className="bg-pink-50 rounded-2xl p-4 md:p-6 text-center border-2 border-pink-100 flex-1 md:flex-none relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-2 opacity-20">
+              <Award className="w-16 h-16 text-pink-500" />
+            </div>
+            <p className="text-pink-500 font-bold mb-1 text-sm md:text-base relative z-10">正確次數</p>
+            <p className="text-3xl md:text-5xl font-black text-pink-600 relative z-10">
+              {score}
+            </p>
+          </div>
+
+        </div>
+
+        {/* Visual Progress Bar (Desktop) */}
+        <div className="mt-auto hidden md:block">
+          <div className="flex justify-between text-sm font-bold text-gray-400 mb-2">
+            <span>進度</span>
+            <span>{Math.round((round - 1) / TOTAL_ROUNDS * 100)}%</span>
+          </div>
+          <div className="h-4 bg-gray-200 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-gradient-to-r from-indigo-400 to-pink-400 transition-all duration-500 ease-out"
+              style={{ width: `${((round - 1) / TOTAL_ROUNDS) * 100}%` }}
+            ></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  );
+}
