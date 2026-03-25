@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>夾夾機：量詞大冒險</title>
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Varela+Round&display=swap');
+
+        body {
+            font-family: 'Varela Round', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #fde68a;
+            touch-action: manipulation; /* Prevent zoom on double tap */
+        }
+
+        /* Carnival Theme Background */
+        .carnival-bg {
+            background: repeating-linear-gradient(
+                45deg,
+                #fca5a5,
+                #fca5a5 40px,
+                #fecaca 40px,
+                #fecaca 80px
+            );
+        }
+
+        /* Animations */
+        .claw-transition {
+            transition: top 0.8s ease-in-out, left 0.8s ease-in-out;
+        }
+
+        .bounce {
+            animation: bounce 2s infinite;
+        }
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-20px); }
+            60% { transform: translateY(-10px); }
+        }
+
+        .wiggle {
+            animation: wiggle 1.5s infinite;
+        }
+        @keyframes wiggle {
+            0%, 100% { transform: rotate(-5deg); }
+            50% { transform: rotate(5deg); }
+        }
+
+        .shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+
+        .pop-in {
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes popIn {
+            from { transform: scale(0.5); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #f00;
+            animation: fall linear forwards;
+        }
+        @keyframes fall {
+            to { transform: translateY(100vh) rotate(720deg); }
+        }
+
+        /* Machine styling */
+        .machine-glass {
+            background: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(219,234,254,0.8) 100%);
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.1);
+            border: 12px solid #fbbf24; /* Gold border */
+            border-radius: 24px;
+        }
+
+        /* Buttons */
+        .game-btn {
+            transition: filter 0.1s;
+        }
+        .game-btn:active {
+            filter: brightness(0.9);
+        }
+
+        /* Carnival Lights */
+        .lights-border {
+            position: relative;
+        }
+        .lights-border::after {
+            content: '';
+            position: absolute;
+            top: 4px; left: 4px; right: 4px; bottom: 4px;
+            border: 6px dotted #fff;
+            animation: flash 1s infinite alternate;
+            pointer-events: none;
+            z-index: 50;
+        }
+        @keyframes flash {
+            0% { border-color: #fef08a; box-shadow: 0 0 10px #fef08a inset; }
+            100% { border-color: #f59e0b; box-shadow: 0 0 20px #f59e0b inset; }
+        }
+        
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+</head>
+<body class="carnival-bg min-h-screen w-full flex items-center justify-center">
+
+    <div id="root" class="w-full min-h-screen bg-white shadow-2xl flex flex-col relative lights-border"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // --- Data ---
+        const STIMULI = [
+            { name: '雞', emoji: '🐔', classifier: '隻' },
+            { name: '八爪魚', emoji: '🐙', classifier: '隻' },
+            { name: '蝦', emoji: '🦐', classifier: '隻' },
+            { name: '兔仔', emoji: '🐰', classifier: '隻' },
+            { name: '狗', emoji: '🐶', classifier: '隻' },
+            { name: '蝸牛', emoji: '🐌', classifier: '隻' },
+            { name: '雀仔', emoji: '🐦', classifier: '隻' },
+            { name: '蛇', emoji: '🐍', classifier: '條' },
+            { name: '蘑菇', emoji: '🍄', classifier: '個' },
+            { name: '蘋果', emoji: '🍎', classifier: '個' },
+            { name: '三文治', emoji: '🥪', classifier: '個' },
+            { name: '老師', emoji: '👩‍🏫', classifier: '個' },
+            { name: '足球', emoji: '⚽', classifier: '個' },
+            { name: '籃球', emoji: '🏀', classifier: '個' },
+            { name: '雪糕', emoji: '🍦', classifier: '個' },
+            { name: '月餅', emoji: '🥮', classifier: '個' },
+            { name: '手錶', emoji: '⌚', classifier: '隻' },
+            { name: '閙鐘', emoji: '⏰', classifier: '個' },
+            { name: '膠桶', emoji: '🪣', classifier: '個' },
+            { name: '鏡', emoji: '🪞', classifier: '塊' },
+            { name: '鉛筆', emoji: '✏️', classifier: '枝' }
+        ];
+
+        const PRESENT_COLORS = ['🎁', '📦', '🛍️'];
+
+        // --- Audio Context Setup ---
+        let audioCtx = null;
+        const initAudio = () => {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        };
+
+        const playSound = (type) => {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            switch (type) {
+                case 'success':
+                    // Happy chime
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523.25, now); // C5
+                    osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+                    osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
+                    gainNode.gain.setValueAtTime(0.3, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                    osc.start(now);
+                    osc.stop(now + 0.4);
+                    break;
+                case 'fail':
+                    // Low boop
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(200, now);
+                    osc.frequency.exponentialRampToValueAtTime(100, now + 0.3);
+                    gainNode.gain.setValueAtTime(0.3, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                    break;
+                case 'grab':
+                    // Mechanical whir
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(100, now);
+                    gainNode.gain.setValueAtTime(0.1, now);
+                    gainNode.gain.linearRampToValueAtTime(0.01, now + 0.5);
+                    osc.start(now);
+                    osc.stop(now + 0.5);
+                    break;
+                case 'drop':
+                    // Whistle down
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(800, now);
+                    osc.frequency.exponentialRampToValueAtTime(200, now + 0.3);
+                    gainNode.gain.setValueAtTime(0.2, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                    break;
+                case 'open':
+                    // Magical pop
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(400, now);
+                    osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
+                    gainNode.gain.setValueAtTime(0.3, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                    break;
+                case 'click':
+                    // Short button click
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(600, now);
+                    osc.frequency.exponentialRampToValueAtTime(300, now + 0.1);
+                    gainNode.gain.setValueAtTime(0.2, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                    osc.start(now);
+                    osc.stop(now + 0.1);
+                    break;
+            }
+        };
+
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        // --- Main App Component ---
+        const App = () => {
+            const [gameState, setGameState] = useState('START'); // START, PLAYING, END
+            const [round, setRound] = useState(1);
+            const MAX_ROUNDS = 10;
+            const [collection, setCollection] = useState([]);
+            
+            // Machine State
+            const [clawPos, setClawPos] = useState({ x: 50, y: 15 });
+            const [clawState, setClawState] = useState('IDLE'); // IDLE, DROPPING, GRABBING, RETURNING, MOVING_TO_CHUTE, DROPPING_PRESENT
+            const [hasPresent, setHasPresent] = useState(false);
+            const [presentFalling, setPresentFalling] = useState(false);
+            const [feedbackMsg, setFeedbackMsg] = useState('');
+            
+            // Modal State
+            const [modalOpen, setModalOpen] = useState(false);
+            const [modalStep, setModalStep] = useState('CLOSED'); // CLOSED, PRESENT, OPENED
+            const [currentTask, setCurrentTask] = useState(null);
+            const [showHint, setShowHint] = useState(false);
+
+            // Setup static presents at the bottom
+            const [pile, setPile] = useState([]);
+            useEffect(() => {
+                const newPile = Array.from({ length: 80 }).map((_, i) => ({
+                    id: i,
+                    emoji: PRESENT_COLORS[Math.floor(Math.random() * PRESENT_COLORS.length)],
+                    left: 25 + Math.random() * 70, // 25% to 95%
+                    bottom: Math.random() * 30 - 8, // -8% to 22%
+                    rotation: Math.random() * 60 - 30,
+                    size: 2.5 + Math.random() * 2
+                }));
+                setPile(newPile);
+            }, []);
+
+            const startGame = () => {
+                initAudio();
+                playSound('click');
+                setGameState('PLAYING');
+                setRound(1);
+                setCollection([]);
+                setClawPos({ x: 50, y: 15 });
+            };
+
+            const moveClaw = (dx, dy) => {
+                if (clawState !== 'IDLE') return;
+                playSound('click');
+                setClawPos(prev => {
+                    let newX = prev.x + dx;
+                    let newY = prev.y + dy;
+                    // Boundaries
+                    if (newX < 35) newX = 35; // Don't allow hovering directly over chute to start
+                    if (newX > 90) newX = 90;
+                    if (newY < 5) newY = 5;
+                    if (newY > 30) newY = 30; // Max resting height
+                    return { x: newX, y: newY };
+                });
+            };
+
+            const executeGrab = async () => {
+                if (clawState !== 'IDLE') return;
+                setClawState('DROPPING');
+                playSound('grab');
+                setFeedbackMsg('');
+                
+                // 1. Drop down
+                setClawPos(prev => ({ ...prev, y: 80 }));
+                await sleep(800);
+
+                // 2. Determine success (90% success rate as per requirements)
+                const isSuccess = Math.random() < 0.90;
+
+                if (isSuccess) {
+                    setClawState('GRABBING');
+                    setHasPresent(true);
+                    playSound('success');
+                    await sleep(400);
+
+                    // 3. Return up
+                    setClawState('RETURNING');
+                    setClawPos(prev => ({ ...prev, y: 15 }));
+                    await sleep(800);
+
+                    // 4. Move to chute (left side)
+                    setClawState('MOVING_TO_CHUTE');
+                    setClawPos(prev => ({ ...prev, x: 15 }));
+                    await sleep(800);
+
+                    // 5. Drop present
+                    setClawState('DROPPING_PRESENT');
+                    setHasPresent(false);
+                    setPresentFalling(true);
+                    playSound('drop');
+                    await sleep(600);
+                    
+                    setPresentFalling(false);
+                    setClawState('IDLE');
+                    
+                    // 6. Generate random stimulus and open modal
+                    const randomStimulus = STIMULI[Math.floor(Math.random() * STIMULI.length)];
+                    const randomCount = Math.floor(Math.random() * 10) + 1;
+                    setCurrentTask({ item: randomStimulus, count: randomCount });
+                    setModalStep('PRESENT');
+                    setModalOpen(true);
+
+                } else {
+                    // Missed!
+                    playSound('fail');
+                    setFeedbackMsg('哎呀！差一點點！(再試一次)');
+                    await sleep(500);
+                    
+                    // Return empty
+                    setClawState('RETURNING');
+                    setClawPos(prev => ({ ...prev, y: 15 }));
+                    await sleep(800);
+                    setClawState('IDLE');
+                    setFeedbackMsg('');
+                }
+            };
+
+            const handleOpenPresent = () => {
+                playSound('open');
+                setModalStep('OPENED');
+                setShowHint(false); // Reset hint state for the new present
+            };
+
+            const handleEvaluation = (isCorrect) => {
+                if (isCorrect) {
+                    playSound('success');
+                    setCollection(prev => [...prev, currentTask]);
+                } else {
+                    playSound('fail');
+                }
+                
+                // Proceed to next round or end game
+                setModalOpen(false);
+                setModalStep('CLOSED');
+                
+                if (round >= MAX_ROUNDS) {
+                    setTimeout(() => setGameState('END'), 500);
+                } else {
+                    setRound(r => r + 1);
+                    // Reset claw position roughly to center
+                    setClawPos({ x: 50, y: 15 });
+                }
+            };
+
+            // --- Sub-components ---
+
+            const StartScreen = () => (
+                <div className="absolute inset-0 bg-blue-50 z-50 flex flex-col items-center justify-center p-8 text-center animate-fade-in">
+                    <h1 className="text-6xl font-bold text-red-500 mb-6 drop-shadow-md wiggle tracking-wider">
+                        🎪 夾夾機 🎪<br/>
+                        <span className="text-4xl text-blue-600">量詞大冒險</span>
+                    </h1>
+                    
+                    <div className="bg-white p-8 rounded-3xl shadow-xl max-w-2xl border-4 border-yellow-400 text-left space-y-4 mb-8">
+                        <h2 className="text-2xl font-bold text-gray-800 border-b-2 border-gray-200 pb-2">遊戲玩法：</h2>
+                        <ul className="text-xl text-gray-700 space-y-3 leading-relaxed">
+                            <li className="flex items-center"><span className="text-3xl mr-3">🕹️</span> 使用方向鍵移動夾子。</li>
+                            <li className="flex items-center"><span className="text-3xl mr-3">👇</span> 按下「Grab」按鈕把禮物抓起來。</li>
+                            <li className="flex items-center"><span className="text-3xl mr-3">🎁</span> 成功夾到後，點擊打開神秘禮物！</li>
+                            <li className="flex items-center"><span className="text-3xl mr-3">🗣️</span> <strong>小朋友：</strong>請大聲說出裡面物品的數量和量詞<br/><span className="text-gray-500 text-base ml-12">（例如：「三個蘋果」、「兩隻狗」）。</span></li>
+                            <li className="flex items-center"><span className="text-3xl mr-3">👨‍🏫</span> <strong>家長/治療師：</strong>根據小朋友的表現，按下 ✅ 或 ❌。</li>
+                        </ul>
+                    </div>
+
+                    <button 
+                        onClick={startGame}
+                        className="game-btn bg-green-500 hover:bg-green-600 text-white text-4xl font-bold py-6 px-16 rounded-full shadow-[0_8px_0_rgb(21,128,61)] transition-all"
+                    >
+                        開始遊戲 ▶️
+                    </button>
+                </div>
+            );
+
+            const EndScreen = () => {
+                // Generate confetti
+                const confetti = Array.from({ length: 50 }).map((_, i) => (
+                    <div key={i} className="confetti" style={{
+                        left: `${Math.random() * 100}%`,
+                        backgroundColor: ['#f00', '#0f0', '#00f', '#ff0', '#f0f'][Math.floor(Math.random() * 5)],
+                        animationDuration: `${Math.random() * 2 + 1}s`,
+                        animationDelay: `${Math.random() * 2}s`
+                    }}></div>
+                ));
+
+                return (
+                    <div className="absolute inset-0 bg-yellow-50 z-50 flex flex-col items-center justify-center p-8 text-center overflow-hidden">
+                        {confetti}
+                        <h1 className="text-6xl font-bold text-red-500 mb-6 drop-shadow-md bounce z-10">
+                            🎉 遊戲完成！ 🎉
+                        </h1>
+                        <div className="bg-white p-10 rounded-3xl shadow-2xl border-8 border-green-400 z-10 flex flex-col items-center">
+                            <h2 className="text-4xl font-bold text-gray-800 mb-4">你的成績：</h2>
+                            <div className="text-7xl font-extrabold text-blue-600 mb-8">
+                                {collection.length} / {MAX_ROUNDS}
+                            </div>
+                            
+                            <div className="flex flex-wrap justify-center gap-2 max-w-lg mb-8">
+                                {collection.map((c, i) => (
+                                    <div key={i} className="bg-gray-100 px-3 py-2 rounded-lg text-2xl shadow-sm border border-gray-200 pop-in" style={{animationDelay: `${i * 0.1}s`}}>
+                                        {c.item.emoji} {c.count}{c.item.classifier}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <button 
+                                onClick={startGame}
+                                className="game-btn bg-blue-500 hover:bg-blue-600 text-white text-3xl font-bold py-4 px-10 rounded-full shadow-[0_6px_0_rgb(29,78,216)] transition-all"
+                            >
+                                再玩一次 🔄
+                            </button>
+                        </div>
+                    </div>
+                );
+            };
+
+            const Modal = () => {
+                if (!modalOpen) return null;
+
+                return (
+                    <div className="absolute inset-0 bg-black/60 z-40 flex items-center justify-center p-4 backdrop-blur-sm">
+                        <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-3xl overflow-hidden pop-in border-8 border-yellow-400 relative">
+                            
+                            {modalStep === 'PRESENT' && (
+                                <div className="p-16 flex flex-col items-center justify-center cursor-pointer" onClick={handleOpenPresent}>
+                                    <h2 className="text-4xl font-bold text-blue-600 mb-10">成功夾到了！</h2>
+                                    <div className="text-9xl bounce drop-shadow-2xl hover:scale-110 transition-transform">
+                                        🎁
+                                    </div>
+                                    <p className="mt-10 text-3xl font-bold text-gray-600 animate-pulse bg-yellow-200 px-8 py-4 rounded-full">
+                                        👉 點擊打開禮物！ 👈
+                                    </p>
+                                </div>
+                            )}
+
+                            {modalStep === 'OPENED' && currentTask && (
+                                <div className="p-10 flex flex-col items-center">
+                                    <h2 className="text-3xl font-bold text-gray-700 mb-2">哇！裡面有...</h2>
+                                    
+                                    {/* Item Display Grid */}
+                                    <div className="bg-blue-50 w-full rounded-3xl p-8 mb-8 flex flex-wrap justify-center items-center gap-4 min-h-[250px] border-4 border-blue-200">
+                                        {Array.from({ length: currentTask.count }).map((_, i) => (
+                                            <div key={i} className="text-7xl pop-in drop-shadow-md" style={{animationDelay: `${i * 0.05}s`}}>
+                                                {currentTask.item.emoji}
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="text-2xl text-gray-600 mb-8 font-bold bg-gray-100 px-8 py-4 rounded-3xl flex flex-col items-center">
+                                        <div>
+                                            請大聲說：<span className="text-red-500 text-3xl mx-2">{currentTask.count}</span> <span className="text-blue-600 text-3xl">___</span> <span className="text-green-600 text-3xl">{currentTask.item.name}</span>
+                                        </div>
+                                        
+                                        <div className="mt-3 h-8 flex items-center justify-center">
+                                            {!showHint ? (
+                                                <button 
+                                                    onClick={() => setShowHint(true)}
+                                                    className="text-base bg-yellow-200 hover:bg-yellow-300 text-yellow-800 px-5 py-1.5 rounded-full font-bold shadow-sm transition-colors flex items-center gap-2 pop-in"
+                                                >
+                                                    💡 顯示提示
+                                                </button>
+                                            ) : (
+                                                <div className="text-base font-normal text-gray-600 bg-white border-2 border-dashed border-gray-300 px-5 py-1.5 rounded-full pop-in">
+                                                    (提示：<span className="font-bold text-blue-600">{currentTask.item.classifier}</span>)
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Evaluation Buttons */}
+                                    <div className="w-full border-t-4 border-dashed border-gray-200 pt-6">
+                                        <p className="text-center text-gray-500 mb-4 font-bold text-xl">家長/治療師評分區：</p>
+                                        <div className="flex justify-center gap-8">
+                                            <button 
+                                                onClick={() => handleEvaluation(true)}
+                                                className="game-btn bg-green-500 hover:bg-green-600 text-white w-40 h-24 rounded-2xl flex flex-col items-center justify-center shadow-[0_8px_0_rgb(21,128,61)]"
+                                            >
+                                                <span className="text-5xl">✅</span>
+                                                <span className="text-xl font-bold mt-1">正確</span>
+                                            </button>
+                                            <button 
+                                                onClick={() => handleEvaluation(false)}
+                                                className="game-btn bg-red-500 hover:bg-red-600 text-white w-40 h-24 rounded-2xl flex flex-col items-center justify-center shadow-[0_8px_0_rgb(185,28,28)]"
+                                            >
+                                                <span className="text-5xl">❌</span>
+                                                <span className="text-xl font-bold mt-1">需努力</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="w-full h-full flex flex-col bg-gray-100 relative">
+                    {/* Screens */}
+                    {gameState === 'START' && <StartScreen />}
+                    {gameState === 'END' && <EndScreen />}
+                    
+                    {/* Header */}
+                    <div className="h-16 bg-red-500 flex items-center justify-between px-6 shadow-md z-10 border-b-4 border-red-700">
+                        <div className="text-white font-bold text-2xl tracking-widest text-shadow">🎪 夾夾機</div>
+                        <div className="flex gap-4">
+                            <div className="bg-white/20 px-4 py-1 rounded-full text-white font-bold text-xl border-2 border-white/30">
+                                回合: {round} / {MAX_ROUNDS}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Main Game Area */}
+                    <div className="flex-1 flex flex-col md:flex-row overflow-y-auto p-4 gap-4 bg-gradient-to-b from-blue-900 to-purple-900 pb-12">
+                        
+                        {/* Left: Claw Machine */}
+                        <div className="flex-1 flex flex-col bg-white rounded-3xl p-4 shadow-inner border-8 border-gray-300 relative min-h-[500px]">
+                            
+                            {/* The Machine Window */}
+                            <div className="flex-1 machine-glass relative overflow-hidden rounded-2xl mb-4 border-b-8 border-gray-400 min-h-[300px]">
+                                
+                                {/* Background Details */}
+                                <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, #000 2px, transparent 2px)', backgroundSize: '20px 20px' }}></div>
+                                <div className="absolute top-0 w-full h-8 bg-gray-800 shadow-md"></div> {/* Top rail housing */}
+                                
+                                {/* The Chute (Hole) */}
+                                <div className="absolute left-0 bottom-0 w-[25%] h-[40%] bg-gradient-to-r from-gray-800 to-gray-700 border-r-8 border-t-8 border-gray-600 rounded-tr-3xl flex items-center justify-center overflow-hidden z-10 shadow-[10px_-10px_20px_rgba(0,0,0,0.3)]">
+                                    <div className="w-3/4 h-3/4 bg-black rounded-xl border-4 border-gray-900 shadow-inner opacity-80"></div>
+                                    <div className="absolute bottom-4 text-gray-400 font-bold text-xl">出口 出口</div>
+                                </div>
+
+                                {/* The Presents Pile */}
+                                {pile.map(p => (
+                                    <div key={p.id} className="absolute drop-shadow-lg" style={{
+                                        left: `${p.left}%`,
+                                        bottom: `${p.bottom}%`,
+                                        transform: `rotate(${p.rotation}deg)`,
+                                        fontSize: `${p.size}rem`,
+                                        zIndex: 5
+                                    }}>
+                                        {p.emoji}
+                                    </div>
+                                ))}
+
+                                {/* Dropping Present Animation */}
+                                {presentFalling && (
+                                    <div className="absolute text-6xl z-20" style={{
+                                        left: '12%',
+                                        top: '40%',
+                                        animation: 'fall down 0.6s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards'
+                                    }}>
+                                        🎁
+                                    </div>
+                                )}
+
+                                {/* Feedback Toast */}
+                                {feedbackMsg && (
+                                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/70 text-white px-6 py-3 rounded-full text-2xl font-bold z-30 pop-in whitespace-nowrap">
+                                        {feedbackMsg}
+                                    </div>
+                                )}
+
+                                {/* The Claw */}
+                                <div 
+                                    className="absolute claw-transition z-20 flex flex-col items-center"
+                                    style={{ 
+                                        left: `${clawPos.x}%`, 
+                                        top: `${clawPos.y}%`,
+                                        transform: 'translateX(-50%)'
+                                    }}
+                                >
+                                    {/* Top Rail Connector */}
+                                    <div className="w-10 h-6 bg-gray-700 rounded-md border-b-4 border-gray-900 absolute -top-10"></div>
+                                    
+                                    {/* String */}
+                                    <div className="w-2 bg-gray-300 absolute -top-[500px] shadow-sm" style={{ height: '500px' }}></div>
+                                    
+                                    {/* Claw Head */}
+                                    <div className="relative mt-2">
+                                        {/* Main Hub */}
+                                        <div className="w-16 h-12 bg-yellow-400 rounded-t-xl border-4 border-yellow-600 shadow-md relative z-10">
+                                            <div className="w-4 h-4 bg-red-500 rounded-full absolute top-2 left-1/2 -translate-x-1/2 shadow-inner"></div>
+                                        </div>
+                                        
+                                        {/* Prongs */}
+                                        <div className="flex justify-between w-24 absolute -left-4 top-8 pointer-events-none">
+                                            <div className="w-6 h-16 border-l-8 border-b-8 border-gray-400 rounded-bl-3xl" style={{ transform: `rotate(${clawState === 'GRABBING' || clawState === 'RETURNING' || clawState === 'MOVING_TO_CHUTE' ? '-20deg' : '0deg'})`, transformOrigin: 'top right', transition: 'transform 0.3s' }}></div>
+                                            <div className="w-6 h-16 border-r-8 border-b-8 border-gray-400 rounded-br-3xl" style={{ transform: `rotate(${clawState === 'GRABBING' || clawState === 'RETURNING' || clawState === 'MOVING_TO_CHUTE' ? '20deg' : '0deg'})`, transformOrigin: 'top left', transition: 'transform 0.3s' }}></div>
+                                        </div>
+
+                                        {/* Held Present */}
+                                        {hasPresent && (
+                                            <div className="absolute top-12 left-1/2 -translate-x-1/2 text-5xl z-0 pop-in">
+                                                🎁
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Controls Panel */}
+                            <div className="h-48 bg-gray-200 rounded-2xl flex items-center justify-around md:justify-between px-2 md:px-8 border-t-4 border-gray-300 shadow-inner">
+                                
+                                {/* D-PAD */}
+                                <div className="relative w-32 h-32 md:w-40 md:h-40 bg-gray-300 rounded-full border-8 border-gray-400 shadow-inner shrink-0">
+                                    <button onClick={() => moveClaw(0, -10)} className="absolute top-0 md:top-1 left-1/2 -translate-x-1/2 w-10 md:w-12 h-12 md:h-14 bg-gray-800 rounded-t-lg active:bg-gray-600 flex items-center justify-center text-white text-xl md:text-2xl game-btn shadow-md">▲</button>
+                                    <button onClick={() => moveClaw(0, 10)} className="absolute bottom-0 md:bottom-1 left-1/2 -translate-x-1/2 w-10 md:w-12 h-12 md:h-14 bg-gray-800 rounded-b-lg active:bg-gray-600 flex items-center justify-center text-white text-xl md:text-2xl game-btn shadow-md">▼</button>
+                                    <button onClick={() => moveClaw(-10, 0)} className="absolute left-0 md:left-1 top-1/2 -translate-y-1/2 w-12 md:w-14 h-10 md:h-12 bg-gray-800 rounded-l-lg active:bg-gray-600 flex items-center justify-center text-white text-xl md:text-2xl game-btn shadow-md">◀</button>
+                                    <button onClick={() => moveClaw(10, 0)} className="absolute right-0 md:right-1 top-1/2 -translate-y-1/2 w-12 md:w-14 h-10 md:h-12 bg-gray-800 rounded-r-lg active:bg-gray-600 flex items-center justify-center text-white text-xl md:text-2xl game-btn shadow-md">▶</button>
+                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 md:w-12 h-10 md:h-12 bg-gray-900 rounded-full shadow-inner"></div>
+                                </div>
+
+                                {/* Grab Button */}
+                                <button 
+                                    onClick={executeGrab}
+                                    disabled={clawState !== 'IDLE'}
+                                    className={`w-28 h-28 md:w-32 md:h-32 rounded-full border-8 flex flex-col items-center justify-center game-btn shrink-0 ${clawState === 'IDLE' ? 'bg-red-500 border-red-700 shadow-[0_8px_0_rgb(153,27,27)] hover:bg-red-400 cursor-pointer' : 'bg-gray-400 border-gray-600 shadow-[0_8px_0_rgb(75,85,99)] cursor-not-allowed'}`}
+                                >
+                                    <span className="text-white text-2xl md:text-3xl font-black tracking-wider mb-1">下抓</span>
+                                    <span className="text-white/80 text-xs md:text-sm font-bold">GRAB</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Right: Collection Bar */}
+                        <div className="w-full md:w-80 shrink-0 bg-white rounded-3xl p-6 shadow-inner border-8 border-yellow-400 flex flex-col relative overflow-hidden min-h-[400px]">
+                            <div className="absolute top-0 left-0 w-full h-4 bg-yellow-400"></div>
+                            <h3 className="text-3xl font-bold text-center text-yellow-600 mb-4 border-b-4 border-yellow-100 pb-4">
+                                🏆 收集箱
+                            </h3>
+                            
+                            <div className="flex-1 overflow-y-auto hide-scrollbar flex flex-col gap-3">
+                                {collection.length === 0 ? (
+                                    <div className="flex-1 flex items-center justify-center text-gray-400 text-xl font-bold text-center p-4">
+                                        還沒有收集到物品喔！<br/>快去夾禮物吧！
+                                    </div>
+                                ) : (
+                                    collection.map((item, index) => (
+                                        <div key={index} className="bg-blue-50 p-4 rounded-xl border-2 border-blue-200 flex items-center justify-between shadow-sm pop-in">
+                                            <div className="text-4xl bg-white p-2 rounded-lg shadow-sm border border-gray-100">
+                                                {item.item.emoji}
+                                            </div>
+                                            <div className="text-2xl font-bold text-gray-700 text-right">
+                                                <span className="text-red-500 mr-1">{item.count}</span>
+                                                <span className="text-blue-600">{item.item.classifier}</span>
+                                                <span className="text-gray-800 ml-1">{item.item.name}</span>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                            
+                            {/* Progress Indicator */}
+                            <div className="mt-4 pt-4 border-t-4 border-gray-100 text-center">
+                                <div className="text-gray-500 font-bold mb-2 text-lg">進度</div>
+                                <div className="w-full bg-gray-200 rounded-full h-6 overflow-hidden border-2 border-gray-300 relative">
+                                    <div 
+                                        className="bg-green-500 h-full transition-all duration-500 ease-out flex items-center justify-end pr-2"
+                                        style={{ width: `${(round - 1) / MAX_ROUNDS * 100}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    {/* Modal Overlay */}
+                    <Modal />
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
