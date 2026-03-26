@@ -11,8 +11,7 @@
         body {
             font-family: 'Noto Sans HK', sans-serif;
             background-color: #FDFD96; /* Pastel Yellow */
-            overflow: hidden;
-            touch-action: none; /* Prevent scrolling while slicing */
+            overflow-x: hidden;
         }
 
         /* Custom Animations */
@@ -106,6 +105,7 @@
             height: 100%;
             z-index: 30;
             cursor: crosshair;
+            touch-action: none; /* Prevent scrolling while slicing */
         }
 
         /* Progress Bar */
@@ -148,7 +148,7 @@
         }
     </style>
 </head>
-<body class="text-gray-800 flex flex-col h-screen w-screen">
+<body class="text-gray-800 flex flex-col min-h-screen">
 
     <!-- AUDIO CONTEXT (Synthesized sounds, no external assets needed) -->
     <script>
@@ -212,7 +212,7 @@
     <!-- UI SCREENS -->
 
     <!-- 1. START SCREEN -->
-    <div id="startScreen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#FDFD96] p-6 text-center">
+    <div id="startScreen" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#FDFD96] p-6 text-center overflow-y-auto">
         <h1 class="text-5xl font-black text-red-600 mb-6 drop-shadow-md tracking-wider">量詞盲盒大冒險</h1>
         <div class="bg-white/80 p-8 rounded-3xl shadow-xl max-w-lg w-full border-4 border-[#B5EAD7]">
             <h2 class="text-2xl font-bold mb-4 text-gray-700">遊戲玩法 (Instructions):</h2>
@@ -229,18 +229,23 @@
     </div>
 
     <!-- 2. GAME SCREEN -->
-    <div id="gameScreen" class="hidden flex-1 flex flex-row overflow-hidden relative">
+    <div id="gameScreen" class="hidden flex-1 flex flex-col md:flex-row min-h-screen relative">
         
         <!-- Main Game Area -->
         <div class="flex-1 flex flex-col relative">
             
             <!-- Header Status -->
-            <div class="p-6 flex justify-between items-center h-24">
-                <div class="text-2xl font-bold text-[#FFB7B2] bg-white/60 px-6 py-2 rounded-full shadow-sm">
-                    回合 (Round): <span id="roundDisplay">1</span> / 10
-                </div>
-                <div class="text-2xl font-bold text-[#B5EAD7] bg-white/60 px-6 py-2 rounded-full shadow-sm">
-                    答對: <span id="scoreDisplay">0</span>
+            <div class="p-4 md:p-6 flex flex-col sm:flex-row justify-between items-center gap-4 z-10">
+                <button id="homeBtn" class="flex items-center gap-2 text-lg font-bold bg-white/80 hover:bg-white text-gray-700 px-4 py-2 rounded-full shadow-sm border-2 border-[#FFB7B2] transition transform hover:scale-105 active:scale-95">
+                    🏠 主頁 (Home)
+                </button>
+                <div class="flex flex-wrap justify-center gap-4">
+                    <div class="text-xl md:text-2xl font-bold text-[#FFB7B2] bg-white/60 px-4 md:px-6 py-2 rounded-full shadow-sm">
+                        回合 (Round): <span id="roundDisplay">1</span> / 10
+                    </div>
+                    <div class="text-xl md:text-2xl font-bold text-[#B5EAD7] bg-white/60 px-4 md:px-6 py-2 rounded-full shadow-sm">
+                        答對: <span id="scoreDisplay">0</span>
+                    </div>
                 </div>
             </div>
 
@@ -291,7 +296,7 @@
                         </button>
                         <button id="incorrectBtn" class="bg-[#FFB7B2] hover:bg-[#ff9d96] text-white p-6 rounded-full shadow-lg transform transition hover:scale-110 active:scale-95 border-4 border-white flex flex-col items-center justify-center w-32 h-32">
                             <span class="text-5xl">❌</span>
-                            <span class="text-sm font-bold mt-2 text-red-700">繼續努力</span>
+                            <span class="text-sm font-bold mt-2 text-red-700">不正確</span>
                         </button>
                     </div>
 
@@ -304,26 +309,32 @@
         </div>
 
         <!-- Right Side Progress Bar -->
-        <div class="w-32 bg-white/40 border-l-4 border-white flex flex-col items-center py-6 shadow-inner z-10">
-            <h3 class="text-lg font-black text-gray-500 mb-4 tracking-widest" style="writing-mode: vertical-rl;">進度 (Progress)</h3>
-            <div class="flex-1 w-full flex justify-center pb-4">
-                <div class="progress-container">
-                    <div class="progress-fill" id="progressFill"></div>
+        <div class="w-full md:w-32 bg-white/40 border-t-4 md:border-t-0 md:border-l-4 border-white flex flex-row md:flex-col items-center justify-center py-4 md:py-6 shadow-inner z-10 min-h-[100px] md:min-h-0">
+            <h3 class="text-lg font-black text-gray-500 mb-0 md:mb-4 mr-4 md:mr-0 tracking-widest md:writing-mode-vertical" style="writing-mode: horizontal-tb; @media (min-width: 768px) { writing-mode: vertical-rl; }">進度 (Progress)</h3>
+            <div class="flex-1 w-full flex justify-center pb-0 md:pb-4 px-4 md:px-0 h-8 md:h-auto">
+                <div class="progress-container md:h-full w-full md:w-10 h-6 flex-row md:flex-col-reverse rounded-full">
+                    <div class="progress-fill h-full md:w-full md:h-0" style="width: 0%;" id="progressFill"></div>
                     <!-- Create 10 lines for visual division -->
-                    <div class="absolute inset-0 flex flex-col">
-                        <div class="progress-step"></div><div class="progress-step"></div><div class="progress-step"></div>
-                        <div class="progress-step"></div><div class="progress-step"></div><div class="progress-step"></div>
-                        <div class="progress-step"></div><div class="progress-step"></div><div class="progress-step"></div>
-                        <div class="progress-step" style="border:none;"></div>
+                    <div class="absolute inset-0 flex flex-row md:flex-col">
+                        <div class="progress-step border-r-2 md:border-r-0 md:border-b-2 h-full w-[10%] md:h-[10%] md:w-full border-dashed border-white/50 box-border"></div>
+                        <div class="progress-step border-r-2 md:border-r-0 md:border-b-2 h-full w-[10%] md:h-[10%] md:w-full border-dashed border-white/50 box-border"></div>
+                        <div class="progress-step border-r-2 md:border-r-0 md:border-b-2 h-full w-[10%] md:h-[10%] md:w-full border-dashed border-white/50 box-border"></div>
+                        <div class="progress-step border-r-2 md:border-r-0 md:border-b-2 h-full w-[10%] md:h-[10%] md:w-full border-dashed border-white/50 box-border"></div>
+                        <div class="progress-step border-r-2 md:border-r-0 md:border-b-2 h-full w-[10%] md:h-[10%] md:w-full border-dashed border-white/50 box-border"></div>
+                        <div class="progress-step border-r-2 md:border-r-0 md:border-b-2 h-full w-[10%] md:h-[10%] md:w-full border-dashed border-white/50 box-border"></div>
+                        <div class="progress-step border-r-2 md:border-r-0 md:border-b-2 h-full w-[10%] md:h-[10%] md:w-full border-dashed border-white/50 box-border"></div>
+                        <div class="progress-step border-r-2 md:border-r-0 md:border-b-2 h-full w-[10%] md:h-[10%] md:w-full border-dashed border-white/50 box-border"></div>
+                        <div class="progress-step border-r-2 md:border-r-0 md:border-b-2 h-full w-[10%] md:h-[10%] md:w-full border-dashed border-white/50 box-border"></div>
+                        <div class="progress-step h-full w-[10%] md:h-[10%] md:w-full box-border border-none"></div>
                     </div>
                 </div>
             </div>
-            <div class="text-3xl" id="progressStar">⭐</div>
+            <div class="text-3xl ml-4 md:ml-0 md:mt-4" id="progressStar">⭐</div>
         </div>
     </div>
 
     <!-- 3. END SCREEN -->
-    <div id="endScreen" class="hidden absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#E2F0CB] p-6 text-center">
+    <div id="endScreen" class="hidden fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#E2F0CB] p-6 text-center overflow-y-auto">
         <h1 class="text-6xl font-black text-[#FFB7B2] mb-4 drop-shadow-md animate-bounce">好叻呀！🎉</h1>
         <h2 class="text-3xl font-bold text-gray-600 mb-8">你完成咗啦！(You finished!)</h2>
         
@@ -595,8 +606,20 @@
             displays.score.innerText = correctCount;
             // Update progress bar
             const percentage = (correctCount / TOTAL_ROUNDS) * 100;
-            displays.progressFill.style.height = `${percentage}%`;
+            // Support both horizontal (mobile) and vertical (desktop) progress bar
+            if (window.innerWidth >= 768) {
+                displays.progressFill.style.height = `${percentage}%`;
+                displays.progressFill.style.width = '100%';
+            } else {
+                displays.progressFill.style.width = `${percentage}%`;
+                displays.progressFill.style.height = '100%';
+            }
         }
+
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            updateUI(); // Keep progress bar correctly oriented on resize
+        });
 
         function endGame() {
             sounds.tada();
@@ -623,8 +646,18 @@
             }
         }
 
+        function goHome() {
+            screens.game.classList.add('hidden');
+            screens.end.classList.add('hidden');
+            screens.start.classList.remove('hidden');
+            currentRound = 1;
+            correctCount = 0;
+            resetBox();
+        }
+
         // Event Listeners for Buttons
         document.getElementById('startBtn').addEventListener('click', startGame);
+        document.getElementById('homeBtn').addEventListener('click', goHome);
         document.getElementById('correctBtn').addEventListener('click', () => handleAnswer(true));
         document.getElementById('incorrectBtn').addEventListener('click', () => handleAnswer(false));
         document.getElementById('nextRoundBtn').addEventListener('click', nextRound);
